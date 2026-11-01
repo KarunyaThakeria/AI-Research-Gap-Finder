@@ -1,3 +1,5 @@
+import re
+
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 
@@ -8,240 +10,115 @@ llm = ChatOpenAI(
 )
 
 
+# ----------------------------------------------------------------------
+# Pass 1: draft gaps, strictly from the supplied text
+# ----------------------------------------------------------------------
 gap_prompt = ChatPromptTemplate.from_template("""
-You are an expert academic research analyst specializing in systematic literature reviews, comparative research analysis, and research gap identification.
-
-Your task is to analyze structured information extracted from multiple research papers and identify meaningful, evidence-based research gaps by comparing the papers collectively.
-
-Your primary objective is to identify genuine research limitations, unexplored research dimensions, methodological shortcomings, and potential opportunities for future research.
-
-Prioritize accuracy, evidence quality, and meaningful comparisons over the number of gaps generated.
-
-## 1. Research Gap Categories
-
-Consider the following categories when identifying potential research gaps:
-
-1. **Methodological Gaps:** Limitations in existing methodologies, algorithms, techniques, or approaches. Identify opportunities to improve, extend, or combine existing methods.
-
-2. **Dataset Gaps:** Limitations related to dataset size, diversity, quality, representation, language, domain, or coverage. Only identify these when the provided papers contain relevant evidence.
-
-3. **Research Scope Gaps:** Limitations in the scope of existing research, including tasks, applications, geographical regions, populations, domains, or research dimensions that have not been sufficiently investigated.
-
-4. **Performance Gaps:** Opportunities to improve accuracy, efficiency, scalability, robustness, generalization, or evaluation. Do not claim performance limitations without relevant experimental evidence or explicit author statements.
-
-5. **Unexplored Combinations:** Potential research opportunities involving combinations of methodologies, technologies, datasets, or research domains discussed in different papers.
-
-6. **Future Research Opportunities:** Research directions explicitly suggested by the authors or logically derived from the limitations and findings of the papers.
-
-These categories are guidelines for organizing identified gaps. They are not a checklist that must be completed.
-
-## 2. Research Analysis Process
-
-Follow the steps below before generating the final research gaps.
-
-### Step 1: Understand Individual Papers
-
-Examine the available information for each paper, including:
-
-- Research objectives and problem statements.
-- Methodologies, algorithms, and techniques.
-- Datasets and experimental settings.
-- Results and evaluation metrics.
-- Limitations and challenges.
-- Conclusions and future research directions.
-
-Do not assume information that is not present in the supplied paper analyses.
-
-### Step 2: Perform Cross-Paper Comparison
-
-Compare the papers collectively rather than analyzing each paper independently.
-
-Look for:
-
-- Similarities and differences in research objectives.
-- Differences in methodologies and approaches.
-- Common limitations or challenges.
-- Research problems addressed by one paper but not explored by others.
-- Differences in datasets, experimental settings, and evaluation approaches.
-- Opportunities to extend or combine methodologies.
-- Contradictions or differences in findings that may require further investigation.
-
-Identify meaningful relationships between the papers.
-
-Do not generate a research gap merely because two papers discuss different topics.
-
-### Step 3: Identify and Classify Research Gaps
-
-Classify each potential gap into one of the following evidence types:
-
-**A. Explicit Gap**
-
-A limitation, challenge, or future research direction directly acknowledged by the authors.
-
-**B. Inferred Gap**
-
-A potential research gap logically derived through comparison of the methodologies, findings, limitations, or research scope of multiple papers.
-
-**C. Proposed Research Combination**
-
-A potential research opportunity involving the combination of approaches, techniques, or domains discussed in the provided papers.
-
-Clearly distinguish these evidence types. Do not present inferred opportunities or proposed combinations as limitations explicitly acknowledged by the authors.
-
-### Step 4: Validate Every Potential Gap
-
-Before including a gap in the final output, evaluate the following:
-
-1. Is there sufficient supporting evidence in the provided papers?
-2. Does the evidence genuinely support the identified gap?
-3. Is the gap a meaningful research problem rather than a general suggestion?
-4. Has the issue already been addressed by any of the provided papers?
-5. Is the gap genuinely distinct from other identified gaps?
-6. Does the suggested research direction logically follow from the evidence?
-7. Is the gap explicitly acknowledged, inferred through comparison, or simply a proposed combination?
-
-If the evidence is insufficient, do not present the gap as an established limitation.
-
-Mark uncertain claims appropriately or exclude them.
-
-## 3. Number and Selection of Research Gaps
-
-There is NO fixed or minimum number of research gaps to generate.
-
-The number of gaps must depend entirely on the quality and strength of the available evidence.
-
-Follow these rules strictly:
-
-- Do not generate exactly six gaps.
-- Do not generate one gap for each of the six categories.
-- Do not force every category to contain a research gap.
-- Multiple gaps may belong to the same category.
-- Some categories may contain no identified gaps.
-- If only two or three meaningful gaps are supported, return only those gaps.
-- If no sufficiently supported gaps can be identified, explicitly state that insufficient evidence is available.
-
-Prioritize fewer, well-supported research gaps over numerous weak or speculative suggestions.
-
-Never generate additional gaps simply to make the output appear comprehensive.
-
-## 4. Gap Filtering and Deduplication
-
-Before producing the final output, perform a separate filtering step.
-
-- Identify gaps that describe the same underlying research problem.
-- Merge overlapping gaps into one stronger and more comprehensive gap.
-- Avoid generating separate gaps by simply changing their category or suggested research direction.
-- Remove repetitive, vague, trivial, or weakly supported gaps.
-- Ensure that every retained gap represents a distinct research problem or opportunity.
-
-A single gap may be relevant to multiple categories. Assign one primary category to avoid unnecessary duplication.
-
-## 5. Required Output Format
-
-For every validated research gap, provide the following information:
-
-**1. Gap ID:** A unique identifier such as G1, G2, G3.
-
-**2. Gap Title:** A concise and specific title describing the research gap.
-
-**3. Explanation:** Explain the limitation or research opportunity clearly.
-
-**4. Primary Category:** Select the most appropriate category from the six categories.
-
-**5. Evidence Type:** Explicit, Inferred, or Proposed Research Combination.
-
-**6. Supporting Paper Names:** List the papers that provide relevant evidence.
-
-**7. Evidence from Papers:** Provide relevant findings, limitations, statements, or experimental observations. Include page numbers or section names when available.
-
-**8. Cross-Paper Comparison:** Explain how the papers collectively support the identified gap. For explicitly stated gaps, explain the relevant context from the paper.
-
-**9. Suggested Research Direction:** Recommend a specific and feasible direction for further investigation.
-
-**10. Confidence Level:** High, Medium, or Low.
-
-Use the following confidence guidelines:
-
-- High: Directly supported by explicit author statements or strong evidence from multiple papers.
-- Medium: Logically inferred from meaningful comparisons between papers.
-- Low: A plausible opportunity with limited supporting evidence.
-
-Do not assign high confidence to a gap based only on the absence of a topic in the provided papers.
-
-## 6. Evidence and Reliability Rules
-
-These rules are mandatory:
-
-1. Use only the information provided in the paper analyses.
-2. Never invent research findings, methodologies, datasets, limitations, or experimental results.
-3. Never fabricate quotations or attribute statements to authors without evidence.
-4. Preserve the original meaning of the paper's findings and limitations.
-5. Do not claim that a research topic is globally unexplored based only on the provided papers.
-6. Absence of discussion in a paper does not automatically establish a research gap.
-7. Do not assume that a methodology is ineffective without supporting evidence.
-8. Do not generate dataset or performance gaps without relevant supporting information.
-9. Distinguish demonstrated limitations from possible future improvements.
-10. If evidence is insufficient, explicitly acknowledge the uncertainty.
-11. Do not force a research direction simply to make a gap appear useful.
-12. Ensure that each suggested research direction is relevant to the identified gap.
-
-## 7. Final Summary
-
-After presenting all validated research gaps, provide a concise summary containing:
-
-- Total number of validated research gaps.
-- Number of Explicit, Inferred, and Proposed Research Combination gaps.
-- Distribution across categories, including only categories with identified gaps.
-- The three strongest gaps ranked by evidence quality, if at least three exist.
-- Categories where no sufficiently supported gaps were identified.
-- A brief explanation of any major limitations in the available paper information.
-
-If no gaps pass validation, clearly state that no sufficiently supported research gaps were identified.
-
-Do not add speculative gaps to the final summary.
-
-## 8. Input Paper Analyses
-
-Analyze the following structured information extracted from multiple research papers:
-
+You are a careful research analyst. You will be given structured information extracted from several research papers.
+Your job is to report research gaps that are SUPPORTED BY THE TEXT BELOW. Accuracy matters far more than quantity.
+
+SOURCE RULES (mandatory)
+1. Use ONLY the text under INPUT. Do not use outside knowledge, other papers, or what you think is true about the field.
+2. Never invent findings, datasets, numbers, limitations, or quotations.
+3. Every gap must be backed by evidence copied EXACTLY from the INPUT (same words, in quotation marks). If you cannot copy a supporting sentence or phrase, do not report the gap.
+4. If you paraphrase, do not use quotation marks.
+5. Do NOT claim a topic is "unexplored", "missing" or "never studied". You only know about the papers given. You may say "not addressed in the provided papers", and only as an Inferred gap.
+6. A paper not mentioning something is NOT evidence of a gap by itself.
+7. If a paper has no limitation or future-work information in the INPUT, say so; do not guess one.
+
+GAP TYPES
+- Explicit: the authors themselves state this limitation or future work in the INPUT. You must quote it.
+- Inferred: you compare two or more papers in the INPUT and found a difference, conflict, or limitation that follows from quoted evidence in EACH paper you cite. An Inferred gap needs quotes from at least two different papers.
+Do not use any other type. Do not propose method combinations unless both parts are quoted from the INPUT.
+
+HOW MANY GAPS
+There is no target number. Return 0, 1, 2 or more gaps, depending only on the evidence. Returning "No sufficiently supported gaps" is a correct answer when evidence is thin. Merge gaps that describe the same problem.
+
+OUTPUT FORMAT (use exactly this, one block per gap)
+
+### G1: <specific title>
+- **Type:** Explicit or Inferred
+- **Papers:** <paper names>
+- **Evidence:** "<exact quote>" (<paper name>, <page or section if given in the INPUT, otherwise omit>)
+- **Why this is a gap:** <1-2 sentences that follow directly from the evidence>
+- **Suggested direction:** <1 sentence, must follow directly from the evidence>
+- **Confidence:** High (author states it) / Medium (clear cross-paper comparison) / Low (weak support)
+
+After all gaps add:
+
+### Papers with no usable limitation or future-work information
+<list paper names, or write "None">
+
+### Summary
+<number of gaps, how many Explicit vs Inferred, and one sentence on any weakness in the available information>
+
+INPUT
 {paper_analyses}
-
-## Final Instruction
-
-Your goal is not to generate as many research gaps as possible.
-
-Your goal is to identify the smallest set of distinct, meaningful, and well-supported research gaps that accurately represent the research opportunities emerging from the provided papers.
-
-Evidence quality must always take priority over the number of gaps.
-STRICT QUOTATION VERIFICATION:
-
-Never generate a direct quotation unless the exact wording
-is present in the supplied paper analysis.
-
-If the evidence is paraphrased, do not use quotation marks.
-
-Before classifying a gap as Explicit, verify that the
-original paper directly acknowledges the specific
-limitation or future research direction.
-
-Do not confuse a general future research recommendation
-with a recommendation to investigate a specific method
-or combination.
-
-Check whether the proposed combination has already been
-discussed or implemented in any of the provided papers.
-
-If the evidence cannot be verified, classify the gap as
-Inferred or mark it as requiring verification.
 """)
 
 
+# ----------------------------------------------------------------------
+# Pass 2: fact-check the draft against the same source
+# ----------------------------------------------------------------------
+verify_prompt = ChatPromptTemplate.from_template("""
+You are a strict fact-checker. Below are an INPUT (the only source of truth) and a DRAFT list of research gaps written from it.
+Check the DRAFT against the INPUT and return a corrected version.
+
+For every gap in the DRAFT:
+1. Check each quotation. A quote is valid only if those words really appear in the INPUT. If a quote is not found, remove it. If no valid evidence remains, delete the gap.
+2. If a gap is labelled Explicit, confirm the INPUT shows the authors themselves stating that limitation or future work. If not, change it to Inferred, or delete it if it is not supported by quotes from at least two papers.
+3. Delete any gap that claims something is "unexplored", "never studied" or "missing in the field". Rewrite it as "not addressed in the provided papers" only if it still has quoted support.
+4. Delete any gap that relies only on a paper not mentioning something.
+5. Check that numbers, dataset names and method names in the gap appear in the INPUT. Fix or delete if not.
+6. Make sure "Why this is a gap" and "Suggested direction" follow from the quoted evidence and add no new facts.
+7. Lower the confidence if the support is weaker than stated.
+
+These quotes were automatically found NOT to appear in the INPUT. Remove them:
+{unverified_quotes}
+
+Keep the same output format as the DRAFT. Renumber the gaps (G1, G2, ...). Update the Summary counts.
+If no gap survives, output exactly: "No sufficiently supported research gaps could be identified from the provided papers."
+At the end add a short section "### Removed during verification" listing each removed gap title with a reason of at most 10 words (write "None" if nothing was removed).
+Do not add new gaps.
+
+INPUT
+{paper_analyses}
+
+DRAFT
+{draft}
+""")
+
+
+# ----------------------------------------------------------------------
+# Programmatic quote check (no LLM, so it cannot hallucinate)
+# ----------------------------------------------------------------------
+def _normalize(text):
+    text = re.sub(r"[^\w\s]", "", text.lower())
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _find_unverified_quotes(draft, source):
+    """Return quoted passages in the draft that do not appear in the source text."""
+    source_norm = _normalize(source)
+    quotes = re.findall(r'["\u201c]([^"\u201d]{15,}?)["\u201d]', draft)
+    return [q for q in quotes if _normalize(q) not in source_norm]
+
+
 def find_research_gaps(paper_analyses):
-
-    chain = gap_prompt | llm
-
-    response = chain.invoke({
+    # Pass 1: draft
+    draft = (gap_prompt | llm).invoke({
         "paper_analyses": paper_analyses
-    })
+    }).content
 
-    return response.content
+    # Check quotes in code
+    unverified = _find_unverified_quotes(draft, paper_analyses)
+    unverified_text = "\n".join(f"- {q}" for q in unverified) if unverified else "None"
+
+    # Pass 2: verification
+    final = (verify_prompt | llm).invoke({
+        "paper_analyses": paper_analyses,
+        "draft": draft,
+        "unverified_quotes": unverified_text
+    }).content
+
+    return final
