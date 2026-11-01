@@ -1,0 +1,28 @@
+
+# Core LangChain
+langchain
+langchain-core
+langchain-community
+langchain-openai
+langchain-chroma
+langchain-text-splitters
+langchain-classic
+
+# LLM and embeddings
+openai
+
+# PDF processing
+pymupdf
+
+# Vector database and retrieval
+chromadb
+rank-bm25
+
+# Data validation and environment variables
+pydantic
+python-dotenv
+
+# Backend API (for future frontend integration)
+fastapi
+uvicorn
+python-multipart

@@ -1,10 +1,35 @@
-import streamlit as st
+
+# =====================================================
+# 1. LOAD ENVIRONMENT VARIABLES FIRST
+# =====================================================
+
 import os
 import uuid
 import json
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+BASE_DIR = Path(__file__).resolve().parent
+
+env_path = BASE_DIR / ".env"
+load_dotenv(dotenv_path=env_path)
+
+if not os.getenv("OPENAI_API_KEY"):
+    raise ValueError(
+        "OPENAI_API_KEY not found. Please check your .env file."
+    )
+
+
+# =====================================================
+# 2. IMPORT LIBRARIES
+# =====================================================
+
+import streamlit as st
 
 from document_processing.pdf_loader import load_papers
 from document_processing.text_splitter import split_documents
+
 from rag.vector_store import create_vector_store
 from rag.qa import ask_question
 
@@ -12,13 +37,9 @@ from gap_analysis.extractor import extract_information
 from gap_analysis.analyzer import find_research_gaps
 
 
-
-
-
-from dotenv import load_dotenv
-
-load_dotenv()
-
+# =====================================================
+# 3. PAGE CONFIGURATION
+# =====================================================
 
 st.set_page_config(
     page_title="Research Gap Finder",
@@ -27,18 +48,33 @@ st.set_page_config(
 )
 
 st.title("📚 AI Research Gap Finder")
+
 st.write(
     "Upload multiple research papers, ask questions "
     "and discover potential research gaps."
 )
 
 
+# =====================================================
+# 4. INITIALIZE SESSION STATE
+# =====================================================
+
 if "vector_store" not in st.session_state:
     st.session_state.vector_store = None
+
+if "ensemble_retriever" not in st.session_state:
+    st.session_state.ensemble_retriever = None
 
 if "paper_analyses" not in st.session_state:
     st.session_state.paper_analyses = None
 
+if "processed_papers" not in st.session_state:
+    st.session_state.processed_papers = []
+
+
+# =====================================================
+# 5. UPLOAD RESEARCH PAPERS
+# =====================================================
 
 uploaded_files = st.file_uploader(
     "Upload Research Papers",
@@ -47,133 +83,277 @@ uploaded_files = st.file_uploader(
 )
 
 
+# =====================================================
+# 6. PROCESS RESEARCH PAPERS
+# =====================================================
+
 if st.button("Process Research Papers"):
 
     if not uploaded_files:
+
         st.warning("Please upload at least one PDF.")
 
     else:
 
-        os.makedirs("uploads", exist_ok=True)
+        upload_dir = BASE_DIR / "uploads"
+        upload_dir.mkdir(exist_ok=True)
 
         file_paths = []
 
-        for file in uploaded_files:
+        try:
 
-            unique_name = str(uuid.uuid4()) + ".pdf"
+            # -----------------------------------------
+            # SAVE UPLOADED FILES
+            # -----------------------------------------
 
-            path = os.path.join(
-                "uploads",
-                unique_name
+            for file in uploaded_files:
+
+                unique_name = str(uuid.uuid4()) + ".pdf"
+
+                path = upload_dir / unique_name
+
+                with open(path, "wb") as f:
+                    f.write(file.getbuffer())
+
+                file_paths.append(str(path))
+
+            with st.spinner("Processing research papers..."):
+
+                # -------------------------------------
+                # PDF TEXT EXTRACTION
+                # -------------------------------------
+
+                documents = load_papers(file_paths)
+
+                if not documents:
+                    st.error(
+                        "No readable text found in the uploaded PDFs."
+                    )
+                    st.stop()
+
+                # -------------------------------------
+                # TEXT CHUNKING
+                # -------------------------------------
+
+                chunks = split_documents(documents)
+
+                if not chunks:
+                    st.error("No text chunks were generated.")
+                    st.stop()
+
+                st.write(f"Extracted {len(documents)} pages.")
+                st.write(f"Generated {len(chunks)} chunks.")
+
+                # -------------------------------------
+                # CREATE VECTOR STORE + HYBRID RETRIEVER
+                # -------------------------------------
+
+                vector_store, ensemble_retriever = create_vector_store(
+                    chunks,
+                    collection_name="papers_" + uuid.uuid4().hex
+                )
+
+                # Store both objects in session state
+                st.session_state.vector_store = vector_store
+
+                st.session_state.ensemble_retriever = (
+                    ensemble_retriever
+                )
+
+                # -------------------------------------
+                # STRUCTURED PAPER INFORMATION EXTRACTION
+                # -------------------------------------
+
+                analyses = []
+
+                progress = st.progress(0)
+
+                for index, path in enumerate(file_paths):
+
+                    paper_name = os.path.basename(path)
+
+                    # Get documents belonging to this paper
+                    paper_docs = [
+                        doc for doc in documents
+                        if doc.metadata.get("paper_name") == paper_name
+                    ]
+
+                    paper_text = "\n".join(
+                        doc.page_content for doc in paper_docs
+                    )
+
+                    # MVP limit: first 25,000 characters
+                    # Later, improve using section-wise extraction
+                    # or map-reduce processing.
+
+                    analysis = extract_information(
+                        paper_text[:25000]
+                    )
+
+                    analyses.append({
+                        "paper_name": paper_name,
+                        "analysis": analysis.model_dump()
+                    })
+
+                    progress.progress(
+                        (index + 1) / len(file_paths)
+                    )
+
+                st.session_state.paper_analyses = analyses
+
+                st.session_state.processed_papers = file_paths
+
+            st.success(
+                "Research papers processed successfully!"
             )
 
-            with open(path, "wb") as f:
-                f.write(file.getbuffer())
-
-            file_paths.append(path)
-
-        with st.spinner("Processing research papers..."):
-
-            documents = load_papers(file_paths)
-
-            chunks = split_documents(documents)
-
-            # Create a unique collection for this session's
-            # uploaded paper collection.
-            st.session_state.vector_store = create_vector_store(
-                chunks,
-                collection_name="papers_" + uuid.uuid4().hex
-            )
-
-            analyses = []
+            st.subheader("Processed Papers")
 
             for path in file_paths:
+                st.write("📄 " + os.path.basename(path))
 
-                paper_name = os.path.basename(path)
+            st.info(
+                f"Successfully processed {len(file_paths)} papers."
+            )
 
-                paper_docs = [
-                    doc for doc in documents
-                    if doc.metadata.get("paper_name") == paper_name
-                ]
+        except Exception as e:
 
-                paper_text = "\n".join(
-                    doc.page_content for doc in paper_docs
-                )
-
-                # MVP limit; later replace with section-wise
-                # map-reduce extraction for long papers.
-                analysis = extract_information(
-                    paper_text[:25000]
-                )
-
-                analyses.append({
-                    "paper_name": paper_name,
-                    "analysis": analysis.model_dump()
-                })
-
-            st.session_state.paper_analyses = analyses
-
-        st.success("Research papers processed successfully!")
+            st.error(
+                f"Error while processing papers: {str(e)}"
+            )
 
 
-if st.session_state.vector_store:
+# =====================================================
+# 7. RESEARCH PAPER Q&A AND GAP ANALYSIS
+# =====================================================
+
+if st.session_state.ensemble_retriever is not None:
 
     tab1, tab2 = st.tabs([
         "💬 Research Paper Q&A",
         "🔍 Research Gap Finder"
     ])
 
+    # =================================================
+    # TAB 1: RESEARCH PAPER Q&A
+    # =================================================
+
     with tab1:
 
-        st.subheader("Ask questions across your papers")
+        st.subheader("Ask Questions Across Your Papers")
 
         question = st.text_input(
-            "Enter your question"
+            "Enter your question",
+            placeholder=(
+                "Example: What methodologies are used "
+                "in these research papers?"
+            )
         )
 
         if st.button("Get Answer"):
 
-            if question.strip():
+            if not question.strip():
 
-                with st.spinner("Finding relevant information..."):
+                st.warning("Please enter a question.")
 
-                    answer, sources = ask_question(
-                        st.session_state.vector_store,
-                        question
-                    )
+            else:
 
-                st.markdown("### Answer")
-                st.write(answer)
+                try:
 
-                st.markdown("### Supporting Sources")
-
-                for source in sources:
-
-                    with st.expander(
-                        f"{source['paper']} | Page {source['page']}"
+                    with st.spinner(
+                        "Searching research papers..."
                     ):
 
-                        st.write(source["content"])
+                        # Use hybrid retriever
+                        answer, sources = ask_question(
+                            st.session_state.ensemble_retriever,
+                            question
+                        )
+
+                    st.markdown("### Answer")
+
+                    st.write(answer)
+
+                    st.markdown("### Supporting Sources")
+
+                    if sources:
+
+                        for source in sources:
+
+                            with st.expander(
+                                f"{source['paper']} | "
+                                f"Page {source['page']}"
+                            ):
+
+                                st.write(source["content"])
+
+                    else:
+
+                        st.info(
+                            "No supporting sources were returned."
+                        )
+
+                except Exception as e:
+
+                    st.error(
+                        f"Error while answering question: {str(e)}"
+                    )
+
+
+    # =================================================
+    # TAB 2: RESEARCH GAP FINDER
+    # =================================================
 
     with tab2:
 
-        st.subheader("Discover potential research gaps")
+        st.subheader("Discover Potential Research Gaps")
+
+        st.write(
+            "Compare the objectives, methodologies, datasets, "
+            "findings, limitations and future work of "
+            "your uploaded research papers."
+        )
 
         if st.button("Analyze Research Gaps"):
 
-            with st.spinner("Comparing research papers..."):
+            if not st.session_state.paper_analyses:
 
-                gap_results = find_research_gaps(
-                    json.dumps(
-                        st.session_state.paper_analyses,
-                        indent=2
-                    )
+                st.warning(
+                    "Please process research papers first."
                 )
 
-            st.markdown("### Potential Research Gaps")
+            else:
 
-            st.write(gap_results)
+                try:
+
+                    with st.spinner(
+                        "Comparing research papers..."
+                    ):
+
+                        gap_results = find_research_gaps(
+                            json.dumps(
+                                st.session_state.paper_analyses,
+                                indent=2
+                            )
+                        )
+
+                    st.markdown("### Potential Research Gaps")
+
+                    st.write(gap_results)
+
+                except Exception as e:
+
+                    st.error(
+                        f"Error during gap analysis: {str(e)}"
+                    )
+
+
+# =====================================================
+# 8. INITIAL MESSAGE
+# =====================================================
 
 else:
 
-    st.info("Upload and process papers to get started.")
+    st.info(
+        "Upload and process research papers to get started."
+    )
