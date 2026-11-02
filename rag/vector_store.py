@@ -1,4 +1,5 @@
 
+import os
 from langchain_openai import OpenAIEmbeddings
 from langchain_chroma import Chroma
 
@@ -9,8 +10,10 @@ from langchain_classic.retrievers import EnsembleRetriever
 def create_vector_store(chunks, collection_name="research_papers"):
 
     # 1. Generate dense embeddings
+    api_key = os.getenv("OPENAI_API_KEY") or os.getenv("API_KEY")
     embeddings = OpenAIEmbeddings(
-        model="text-embedding-3-small"
+        model="text-embedding-3-small",
+        api_key=api_key
     )
 
     # 2. Store embeddings in ChromaDB

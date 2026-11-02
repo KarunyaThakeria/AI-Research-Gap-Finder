@@ -13,11 +13,11 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).resolve().parent
 
 env_path = BASE_DIR / ".env"
-load_dotenv(dotenv_path=env_path)
+load_dotenv(dotenv_path=env_path, override=True)
 
-if not os.getenv("OPENAI_API_KEY"):
+if not (os.getenv("OPENAI_API_KEY") or os.getenv("API_KEY")):
     raise ValueError(
-        "OPENAI_API_KEY not found. Please check your .env file."
+        "OPENAI_API_KEY or API_KEY not found. Please check your .env file."
     )
 
 
@@ -35,6 +35,7 @@ from rag.qa import ask_question
 
 from gap_analysis.extractor import extract_information
 from gap_analysis.analyzer import find_research_gaps
+from llm_factory import MODEL_OPTIONS
 
 
 # =====================================================
@@ -51,8 +52,27 @@ st.title("📚 AI Research Gap Finder")
 
 st.write(
     "Upload multiple research papers, ask questions "
-    "and discover potential research gaps."
+    "and discover potential research gaps across models."
 )
+
+
+# =====================================================
+# 3.1 SIDEBAR MODEL CONFIGURATION
+# =====================================================
+
+with st.sidebar:
+    st.header("⚙️ Model Configuration")
+    selected_model = st.selectbox(
+        "Select LLM for Evaluation",
+        options=MODEL_OPTIONS,
+        index=0,
+        help="Compare reasoning, latency, and tokens between models."
+    )
+    
+    st.markdown("---")
+    st.markdown("### 📊 Active Model")
+    st.info(f"**{selected_model}**")
+    st.caption("Embeddings: `text-embedding-3-small` (OpenAI)")
 
 
 # =====================================================
@@ -182,12 +202,9 @@ if st.button("Process Research Papers"):
                         doc.page_content for doc in paper_docs
                     )
 
-                    # MVP limit: first 25,000 characters
-                    # Later, improve using section-wise extraction
-                    # or map-reduce processing.
-
                     analysis = extract_information(
-                        paper_text[:25000]
+                        paper_text[:25000],
+                        model_name=selected_model
                     )
 
                     analyses.append({
@@ -261,18 +278,27 @@ if st.session_state.ensemble_retriever is not None:
                 try:
 
                     with st.spinner(
-                        "Searching research papers..."
+                        f"Searching with {selected_model}..."
                     ):
 
-                        # Use hybrid retriever
-                        answer, sources = ask_question(
+                        # Use hybrid retriever with selected model
+                        answer, sources, metrics = ask_question(
                             st.session_state.ensemble_retriever,
-                            question
+                            question,
+                            model_name=selected_model
                         )
 
                     st.markdown("### Answer")
 
                     st.write(answer)
+
+                    # Model Evaluation Metrics Banner
+                    st.markdown("#### ⚡ Performance & Token Metrics")
+                    m_col1, m_col2, m_col3, m_col4 = st.columns(4)
+                    m_col1.metric("⏱️ Latency", f"{metrics['latency_sec']} s")
+                    m_col2.metric("📥 Input Tokens", f"{metrics['input_tokens']:,}")
+                    m_col3.metric("📤 Output Tokens", f"{metrics['output_tokens']:,}")
+                    m_col4.metric("🚀 Throughput", f"{metrics['tokens_per_sec']} t/s")
 
                     st.markdown("### Supporting Sources")
 
@@ -327,19 +353,27 @@ if st.session_state.ensemble_retriever is not None:
                 try:
 
                     with st.spinner(
-                        "Comparing research papers..."
+                        f"Comparing research papers using {selected_model}..."
                     ):
 
-                        gap_results = find_research_gaps(
+                        gap_results, metrics = find_research_gaps(
                             json.dumps(
-                                st.session_state.paper_analyses,
-                                indent=2
-                            )
+                                st.session_state.paper_analyses
+                            ),
+                            model_name=selected_model
                         )
 
                     st.markdown("### Potential Research Gaps")
 
                     st.write(gap_results)
+
+                    # Gap Analysis Metrics Banner
+                    st.markdown("#### ⚡ Performance & Token Metrics")
+                    g_col1, g_col2, g_col3, g_col4 = st.columns(4)
+                    g_col1.metric("⏱️ Latency", f"{metrics['latency_sec']} s")
+                    g_col2.metric("📥 Input Tokens", f"{metrics['input_tokens']:,}")
+                    g_col3.metric("📤 Output Tokens", f"{metrics['output_tokens']:,}")
+                    g_col4.metric("🚀 Throughput", f"{metrics['tokens_per_sec']} t/s")
 
                 except Exception as e:
 

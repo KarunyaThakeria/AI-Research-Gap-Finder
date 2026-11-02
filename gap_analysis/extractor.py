@@ -1,8 +1,7 @@
-from pydantic import BaseModel, Field
 from typing import List
-
-from langchain_openai import ChatOpenAI
+from pydantic import BaseModel
 from langchain_core.prompts import ChatPromptTemplate
+from llm_factory import get_llm
 
 
 class PaperAnalysis(BaseModel):
@@ -20,16 +19,6 @@ class PaperAnalysis(BaseModel):
     limitations: List[str]
 
     future_work: List[str]
-
-
-llm = ChatOpenAI(
-    model="gpt-4o-mini",
-    temperature=0
-)
-
-structured_llm = llm.with_structured_output(
-    PaperAnalysis
-)
 
 
 extraction_prompt = ChatPromptTemplate.from_template("""
@@ -55,7 +44,10 @@ Paper content:
 """)
 
 
-def extract_information(paper_text):
+def extract_information(paper_text, model_name: str = "OpenAI (GPT-4o-mini)"):
+
+    llm = get_llm(model_name)
+    structured_llm = llm.with_structured_output(PaperAnalysis)
 
     chain = extraction_prompt | structured_llm
 

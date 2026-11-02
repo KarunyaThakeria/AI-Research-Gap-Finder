@@ -1,4 +1,3 @@
-
 # Core LangChain
 langchain
 langchain-core
@@ -7,9 +6,13 @@ langchain-openai
 langchain-chroma
 langchain-text-splitters
 langchain-classic
+langchain-google-genai
+langchain-groq
 
 # LLM and embeddings
 openai
+groq
+google-genai
 
 # PDF processing
 pymupdf

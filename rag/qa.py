@@ -1,16 +1,7 @@
 
-from langchain_openai import ChatOpenAI
+import time
 from langchain_core.prompts import ChatPromptTemplate
-
-
-# ==========================================
-# 1. INITIALIZE LLM
-# ==========================================
-
-llm = ChatOpenAI(
-    model="gpt-4o-mini",
-    temperature=0
-)
+from llm_factory import get_llm, extract_metrics
 
 
 # ==========================================
@@ -89,7 +80,7 @@ Omit this section if there are no conflicts.
 # 3. ASK QUESTION USING HYBRID RETRIEVAL
 # ==========================================
 
-def ask_question(ensemble_retriever, question):
+def ask_question(ensemble_retriever, question, model_name: str = "OpenAI (GPT-4o-mini)"):
 
     # Retrieve relevant chunks using hybrid search
     retrieved_docs = ensemble_retriever.invoke(question)
@@ -99,7 +90,8 @@ def ask_question(ensemble_retriever, question):
         return (
             "I could not find relevant information "
             "in the uploaded research papers.",
-            []
+            [],
+            {"latency_sec": 0, "input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "tokens_per_sec": 0}
         )
 
     context = ""
@@ -150,18 +142,21 @@ Content: {content}
         })
 
     # ======================================
-    # 5. GENERATE ANSWER USING LLM
+    # 5. GENERATE ANSWER USING SELECTED LLM
     # ======================================
 
-    chain = prompt | llm
+    selected_llm = get_llm(model_name)
+    chain = prompt | selected_llm
 
+    start_time = time.time()
     response = chain.invoke({
         "context": context,
         "question": question
     })
+    metrics = extract_metrics(response, start_time)
 
     # ======================================
-    # 6. RETURN ANSWER AND SOURCES
+    # 6. RETURN ANSWER, SOURCES, AND METRICS
     # ======================================
 
-    return response.content, sources
+    return response.content, sources, metrics
